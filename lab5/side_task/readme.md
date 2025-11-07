@@ -45,4 +45,5 @@ void my_printf(const char *buffer, long size) {
 ## ✅ Validation Screenshot
 
 Below is the output of the custom `echo` program which uses `my_printf()` internally:
-![Validation Output](./echo_validation.png)
+
+![alt text](echo_validation-1.png)
