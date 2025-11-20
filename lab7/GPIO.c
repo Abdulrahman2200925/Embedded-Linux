@@ -2,7 +2,10 @@
 #include "GPIO_REGS.h"
 #include "GPIO_INTERFACE.h"
 
-
+#ifdef __cplusplus
+namespace mcal {
+namespace gpio {
+#endif
 
 GPIO_Error_t GPIO_INIT(GPIO_CONFIG_t *GPIO_Config)
 {  
@@ -574,73 +577,6 @@ GPIO_Error_t GPIO_LockPin(GPIO_PORT_t Port, GPIO_PIN_t Pin)
 }
 
 #ifdef __cplusplus
-namespace mcal {
-namespace gpio {
-
-/* ----------------------------------------------------
-   Wrapper for GPIO_INIT
----------------------------------------------------- */
-GPIO_Error_t init(GPIO_CONFIG_t *cfg)
-{
-    return ::GPIO_INIT(cfg);
-}
-
-/* ----------------------------------------------------
-   Wrapper for GPIO_DeInit
----------------------------------------------------- */
-GPIO_Error_t deinit(GPIO_PORT_t port, GPIO_PIN_t pin)
-{
-    return ::GPIO_DeInit(port, pin);
-}
-
-/* ----------------------------------------------------
-   Wrapper for GPIO_WritePin
----------------------------------------------------- */
-GPIO_Error_t write(GPIO_PORT_t port, GPIO_PIN_t pin, GPIO_PinState_t state)
-{
-    return ::GPIO_WritePin(port, pin, state);
-}
-
-/* ----------------------------------------------------
-   Wrapper for GPIO_ReadPin
----------------------------------------------------- */
-GPIO_Error_t read(GPIO_PORT_t port, GPIO_PIN_t pin, uint8_t *state)
-{
-    return ::GPIO_ReadPin(port, pin, state);
-}
-
-/* ----------------------------------------------------
-   Wrapper for GPIO_TogglePin
----------------------------------------------------- */
-GPIO_Error_t toggle(GPIO_PORT_t port, GPIO_PIN_t pin)
-{
-    return ::GPIO_TogglePin(port, pin);
-}
-
-/* ----------------------------------------------------
-   Wrapper for GPIO_LockPin
----------------------------------------------------- */
-GPIO_Error_t lock(GPIO_PORT_t port, GPIO_PIN_t pin)
-{
-    return ::GPIO_LockPin(port, pin);
-}
-
-/* ----------------------------------------------------
-   Wrapper for GPIO_UnlockPin
----------------------------------------------------- */
-GPIO_Error_t unlock(GPIO_PORT_t port, GPIO_PIN_t pin)
-{
-    return ::GPIO_UnlockPin(port, pin);
-}
-
-/* ----------------------------------------------------
-   Wrapper for GPIO_ReadPinFast
----------------------------------------------------- */
-uint8_t readFast(GPIO_PORT_t port, GPIO_PIN_t pin)
-{
-    return ::GPIO_ReadPinFast(port, pin);
-}
-
 } // namespace gpio
 } // namespace mcal
 #endif

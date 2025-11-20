@@ -2,6 +2,7 @@
 #define GPIO_INTERFACE_H    
 
 #ifdef __cplusplus
+
 extern "C" {
 #endif
 
@@ -132,27 +133,11 @@ uint8_t GPIO_ReadPinFast(GPIO_PORT_t Port, GPIO_PIN_t Pin);
 
 
 #ifdef __cplusplus
-}
+} // extern "C"
+
 #endif
 
 
-#ifdef __cplusplus
-namespace mcal {
-namespace gpio {
-
-// C++ wrapper API (namespaced versions)
-GPIO_Error_t init(GPIO_CONFIG_t *cfg);
-GPIO_Error_t deinit(GPIO_PORT_t port, GPIO_PIN_t pin);
-GPIO_Error_t write(GPIO_PORT_t port, GPIO_PIN_t pin, GPIO_PinState_t state);
-GPIO_Error_t read(GPIO_PORT_t port, GPIO_PIN_t pin, uint8_t *value);
-GPIO_Error_t toggle(GPIO_PORT_t port, GPIO_PIN_t pin);
-GPIO_Error_t lock(GPIO_PORT_t port, GPIO_PIN_t pin);
-GPIO_Error_t unlock(GPIO_PORT_t port, GPIO_PIN_t pin);
-uint8_t      readFast(GPIO_PORT_t port, GPIO_PIN_t pin);
-
-} // namespace gpio
-} // namespace mcal
-#endif
 
 
 
