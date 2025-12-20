@@ -1,0 +1,2 @@
+/home/mac/x-tools/aarch64-rpi3-linux-gnu/bin/aarch64-rpi3-linux-gnu-ar qc libsegment_core.a CMakeFiles/segment_core.dir/src/GPIO.cpp.o CMakeFiles/segment_core.dir/src/ISTREAM.cpp.o CMakeFiles/segment_core.dir/src/OSTREAM.cpp.o CMakeFiles/segment_core.dir/src/SEGMENT.cpp.o CMakeFiles/segment_core.dir/src/STREAM.cpp.o
+/home/mac/x-tools/aarch64-rpi3-linux-gnu/bin/aarch64-rpi3-linux-gnu-ranlib libsegment_core.a

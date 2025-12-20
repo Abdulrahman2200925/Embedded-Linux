@@ -1,0 +1,1 @@
+/home/mac/x-tools/aarch64-rpi3-linux-gnu/bin/aarch64-rpi3-linux-gnu-g++ CMakeFiles/SEGMENT.dir/app/main.cpp.o -o SEGMENT  libsegment_core.a 

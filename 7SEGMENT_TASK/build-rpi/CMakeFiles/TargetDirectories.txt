@@ -1,0 +1,4 @@
+/home/mac/workspace/Eng.Fady/7SEGMENT_TASK/build-rpi/CMakeFiles/segment_core.dir
+/home/mac/workspace/Eng.Fady/7SEGMENT_TASK/build-rpi/CMakeFiles/SEGMENT.dir
+/home/mac/workspace/Eng.Fady/7SEGMENT_TASK/build-rpi/CMakeFiles/edit_cache.dir
+/home/mac/workspace/Eng.Fady/7SEGMENT_TASK/build-rpi/CMakeFiles/rebuild_cache.dir
