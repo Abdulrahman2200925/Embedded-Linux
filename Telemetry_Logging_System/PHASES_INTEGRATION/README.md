@@ -1,184 +1,45 @@
-# Phase 1: Basic Logging System
-
-A foundational logging system implementing core logging functionality with multiple output sinks.
+# Cpp Project: A Telemetry & Logging System
+> This project is a scalable, multi-threaded logging system written in C++; designed with best architectural and implementation practices in mind, while utilizing both the power Modern C++ provides in addition to industry-standard libraries and tools. 
 
 ## Features
+* Support for multiple local/remote sources of data.
+* Intuitive data formatting.
+* Support for multiple data storage strategies that can be accessed later.
 
-- Structured log messages with timestamp, severity, and context
-- Multiple output destinations (Console, File)
-- Extensible sink interface for custom outputs
-- Type-safe severity levels
-- Unit tested with Google Test and Google Mock
+## System Overview
+![](./README_Photos/project_bd.svg)
 
-## Project Structure
+## Topics
+### Modern C++
+* Dynamic Dispatch (Virtual Functions + Virtual Destructors).
+* Casting (Static & Dynamic + RTTI).
+* Copy Semantics.
+* Move Semantics & Ownership Transfer.
+* Threading, Concurrency, & Callables.
+* Smart Pointers.
+* Special Member Functions & Rules of 0/3/5.
+* Templates & Generic Programming.
 
-```
-PHASE_1/
-├── CMakeLists.txt
-├── README.md
-├── app/
-│   ├── CMakeLists.txt
-│   └── main.cpp
-├── include/
-│   ├── ILogSink.hpp
-│   ├── LogManager.hpp
-│   ├── LogMessage.hpp
-│   ├── ConsoleSinkImpl.hpp
-│   └── FileSinkImpl.hpp
-├── src/
-│   ├── CMakeLists.txt
-│   ├── LogManager.cpp
-│   ├── LogMessage.cpp
-│   ├── ConsoleSinkImpl.cpp
-│   └── FileSinkImpl.cpp
-├── tests/
-│   ├── LogManager_test.cpp
-│   └── MockSink.hpp
-└── docs/
-    └── class_diagram.puml
-```
-
-## Classes
-
-| Class | Description |
-|-------|-------------|
-| `LogMessage` | Holds log data: app name, context, timestamp, severity, text |
-| `ILogSink` | Abstract interface for output destinations |
-| `ConsoleSinkImpl` | Writes logs to standard output |
-| `FileSinkImpl` | Writes logs to a file |
-| `LogManager` | Manages sinks and buffers messages |
-
-## Severity Levels
-
-```cpp
-enum class Severity {
-    DEBUG,
-    INFO,
-    WARNING,
-    ERROR,
-    CRITICAL
-};
-```
-
-## Build
-
-```bash
-cmake -B build && cmake --build build
-```
-
-## Run
-
-```bash
-./build/app/app
-```
-
-## Testing
-
-### Test Structure
-
-| File | Purpose |
-|------|---------|
-| `MockSink.hpp` | Mock implementation of `ILogSink` for testing |
-| `LogManager_test.cpp` | Unit tests for `LogManager` class |
-
-### Run Tests
-
-Using CMake (if configured):
-```bash
-cd build && ctest
-```
-
-Using g++ directly:
-```bash
-g++ tests/LogManager_test.cpp src/LogManager.cpp src/LogMessage.cpp \
-    -I include -lgtest -lgtest_main -lgmock -pthread -o test
-./test
-```
-
-### Test Cases
-
-| Test | Description |
-|------|-------------|
-| `FlushCallsWriteOnSink` | Verifies `flush()` calls `write()` on registered sinks |
-
-### Mock Class
-
-```cpp
-class MockSink : public ILogSink {
-public:
-    MOCK_METHOD(void, write, (const LogMessage& message), (override));
-};
-```
-
-## Usage
-
-```cpp
-#include "LogManager.hpp"
-#include "LogMessage.hpp"
-#include "ConsoleSinkImpl.hpp"
-#include "FileSinkImpl.hpp"
-
-int main() {
-    LogManager manager;
-    
-    manager.addSink(std::make_shared<ConsoleSinkImpl>());
-    manager.addSink(std::make_shared<FileSinkImpl>("log.txt"));
-    
-    manager.log({"MyApp", "Network", Severity::INFO, "Connected"});
-    manager.log({"MyApp", "Network", Severity::ERROR, "Connection lost"});
-    
-    manager.flush();
-    
-    return 0;
-}
-```
-
-## Output Format
-
-```
-[AppName],[Timestamp],[Context],[Severity],[Text]
-```
-
-Example:
-```
-[MyApp],[2026-01-02 04:30:00],[Network],[INFO],[Connected]
-[MyApp],[2026-01-02 04:30:00],[Network],[ERROR],[Connection lost]
-```
-
-## C++ Concepts Used
-
-- Virtual functions and polymorphism
-- Operator overloading (`operator<<`)
-- Smart pointers (`std::shared_ptr`)
-- Range-based for loops
-- `enum class` for type safety
-- `std::chrono` for timestamps
-
-## Design Patterns
-
-- **Strategy Pattern**: `ILogSink` interface allows interchangeable sink implementations
-
-## Dependencies
-
-- C++17
-- CMake 3.16+
-- Google Test (for testing)
-- Google Mock (for testing)
-
-## Topics Covered
-
-### C++
-- `virtual`, `default`, `friend`, `public`, `protected`, `private` keywords
-- Classes, interfaces, and inheritance
-- Virtual functions and virtual destructors
-- Operator overloading
-- Namespaces
-- Smart pointers
+### Libraries
+* `vsomeip`
+* `magic_enum`
+* `CommonAPI`, `CommonAPI-SomeIP` (TBD)
+* `dlt` (TBD)
 
 ### Design Patterns
-- Behavioural → Strategy Pattern
+* Creational Patterns &rarr; Factory, Builder, Creational.
+* Structural Patterns &rarr; Proxy, Adapter, Facade.
+* Behavioural Patterns &rarr; Strategy, Observer.
+* Concurrency Patterns &rarr; Thread Pool.
 
-### Testing
-- Unit testing with Google Test
-- Mocking with Google Mock
-- Test-driven verification of class behavior
+## Grading & Rewards
+> The project consists of 6 phases; each phase contains some mandatory requirements and some extra ones for a more challenging and rewarding experience. Each of the following items is rewarded with points as follows (per phase):
+* Mandatory phase requirements (implementation w/ C++ as detailed in the design) &rarr; 50 Points.
+* Implement listed design patterns &rarr; 125 Points.
+* Perform unit test for each class &rarr; 100 Points.
+* Build using CMake (each module is built as a library and linked with main app) &rarr; 75 Points.
+* Build using Bazel (each module is built as a library and linked with main app) &rarr; 75 Points.
+* Documentation (Markdown + class/sequence diagrams using PlantUML) &rarr; 100 Points.
+* Bonus challenges ( ͡° ͜ʖ ͡°) &rarr; 200 Points. 
+
+> Rewards would be a surprise for now :))
