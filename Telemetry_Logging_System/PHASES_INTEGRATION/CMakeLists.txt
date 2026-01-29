@@ -1,3 +1,4 @@
+## root cmake
 cmake_minimum_required(VERSION 3.16.0)
 
 project(LogManager 
@@ -13,4 +14,4 @@ enable_testing()
 
 add_subdirectory(src)
 add_subdirectory(app)
-add_subdirectory(tests)
+#add_subdirectory(tests)

@@ -1,7 +1,7 @@
-#include <iostream>
+#ifndef ITelemetrySource_HPP
+#define ITelemetrySource_HPP
 
-
-
+#include <string>
 
 class ITelemetrySource {
 public:
@@ -9,3 +9,5 @@ public:
     virtual bool readSource(std::string& out) = 0;
     virtual ~ITelemetrySource() = default;
 };
+
+#endif
