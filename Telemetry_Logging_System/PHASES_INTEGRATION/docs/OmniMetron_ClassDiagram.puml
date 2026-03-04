@@ -1,0 +1,480 @@
+@startuml OmniMetron_ClassDiagram
+
+title OmniMetron - Embedded Telemetry & Logging System
+header
+  C++17 Class Diagram
+end header
+
+skinparam backgroundColor #080C10
+skinparam classBackgroundColor #0D1318
+skinparam classBorderColor #2A3F52
+skinparam classHeaderBackgroundColor #0F1820
+skinparam classFontColor #C8D8E8
+skinparam classAttributeFontColor #7A9AB0
+skinparam arrowColor #00D4FF
+skinparam arrowThickness 1.5
+skinparam noteBorderColor #2A3F52
+skinparam noteBackgroundColor #0F1820
+skinparam noteFontColor #7A9AB0
+skinparam packageBorderColor #2A3F52
+skinparam packageBackgroundColor #080C10
+skinparam packageFontColor #00D4FF
+skinparam titleFontColor #00D4FF
+skinparam titleFontSize 16
+skinparam shadowing false
+skinparam roundCorner 6
+skinparam defaultFontName Monospaced
+
+' ═══════════════════════════════════════════════════════════════
+' ENUMERATIONS
+' ═══════════════════════════════════════════════════════════════
+
+package "Enumerations" #080C10 {
+
+  enum Severity <<enum>> #0D1318 {
+    DEBUG
+    INFO
+    WARNING
+    ERROR
+    CRITICAL
+  }
+
+  enum SeverityLvl_enum <<enum>> #0D1318 {
+    INFO
+    WARNING
+    CRITICAL
+  }
+
+  enum LogSinkType_enum <<enum>> #0D1318 {
+    Console
+    File
+    Socket
+  }
+
+  enum TelemetrySrc_enum <<enum>> #0D1318 {
+    CPU
+    RAM
+    GPU
+  }
+
+}
+
+' ═══════════════════════════════════════════════════════════════
+' PHASE 1 -- LOGGING PIPELINE
+' ═══════════════════════════════════════════════════════════════
+
+package "Phase 1 -- Logging Pipeline" #080C10 {
+
+  class LogMessage #0D1318 {
+    - appName   : string
+    - context   : string
+    - timeStamp : string
+    - severity  : Severity
+    - text      : string
+    --
+    + LogMessage(appName, context, severity, text)
+    + getAppName()   : string
+    + getContext()   : string
+    + getTimeStamp() : string
+    + getSeverity()  : Severity
+    + getText()      : string
+    + operator<<()   : ostream&
+  }
+
+  interface ILogSink <<interface>> #0D1318 {
+    + write(message : LogMessage) = 0
+    + ~ILogSink() = 0
+  }
+
+  class LogManager #0D1318 {
+    - buffer      : RingBuffer
+    - sinks       : vector~shared_ptr~ILogSink~~
+    - threadPool  : ThreadPool
+    - consumerThread : thread
+    - running     : atomic~bool~
+    - sinksMutex  : mutex
+    --
+    + LogManager(bufferSize, threadPoolSize)
+    + addSink(sink : shared_ptr~ILogSink~)
+    + log(message : LogMessage)
+    + start()
+    + stop()
+    - consumerLoop()
+  }
+
+  class ConsoleSinkImpl #0D1318 {
+    + write(message : LogMessage) override
+  }
+
+  class FileSinkImpl #0D1318 {
+    - safeFile : SafeFile
+    - filePath : string
+    --
+    + FileSinkImpl(path : string)
+    + write(message : LogMessage) override
+  }
+
+}
+
+' ═══════════════════════════════════════════════════════════════
+' PHASE 2 -- TELEMETRY SOURCES & RAII
+' ═══════════════════════════════════════════════════════════════
+
+package "Phase 2 -- Telemetry Sources & RAII" #080C10 {
+
+  class SafeFile #0D1318 {
+    - fd       : int
+    - filepath : string
+    --
+    + SafeFile(path : string, flags : int)
+    + SafeFile(SafeFile&&) noexcept
+    + ~SafeFile()
+    + isValid()  : bool
+    + getFd()    : int
+    + read(buffer, count)  : ssize_t
+    + write(buffer, count) : ssize_t
+    .. deleted ..
+    - SafeFile(const SafeFile&) = delete
+    - operator=(const SafeFile&) = delete
+  }
+
+  class SafeSocket #0D1318 {
+    - sockfd         : int
+    - socketPath     : string
+    - isServerSocket : bool
+    --
+    + SafeSocket()
+    + SafeSocket(SafeSocket&&) noexcept
+    + ~SafeSocket()
+    + createSocket() : bool
+    + bind(path)     : bool
+    + listen(backlog): bool
+    + accept()       : SafeSocket
+    + connect(path)  : bool
+    + read(buffer, count)  : ssize_t
+    + write(buffer, count) : ssize_t
+    + isValid() : bool
+    .. deleted ..
+    - SafeSocket(const SafeSocket&) = delete
+    - operator=(const SafeSocket&) = delete
+  }
+
+  interface ITelemetrySource <<interface>> #0D1318 {
+    + openSource()             : bool = 0
+    + readSource(out : string) : bool = 0
+    + ~ITelemetrySource() = 0
+  }
+
+  class FileTelemetrySourceImpl #0D1318 {
+    - safeFile : SafeFile
+    - filePath : string
+    --
+    + FileTelemetrySourceImpl(path : string)
+    + openSource()             : bool override
+    + readSource(out : string) : bool override
+  }
+
+  class SocketTelemetrySourceImpl #0D1318 {
+    - safeSocket : SafeSocket
+    - socketPath : string
+    --
+    + SocketTelemetrySourceImpl(path : string)
+    + openSource()             : bool override
+    + readSource(out : string) : bool override
+  }
+
+}
+
+' ═══════════════════════════════════════════════════════════════
+' PHASE 3 -- BUILDER · FACTORY · TEMPLATES
+' ═══════════════════════════════════════════════════════════════
+
+package "Phase 3 -- Builder · Factory · Templates" #080C10 {
+
+  class SocketSinkImpl #0D1318 {
+    - safeSocket : SafeSocket
+    - socketPath : string
+    - connected  : bool
+    --
+    + SocketSinkImpl(path : string)
+    + write(message : LogMessage) override
+    - ensureConnected() : bool
+    - formatMessage(message) : string
+  }
+
+  class LogManagerBuilder #0D1318 {
+    - sinks          : vector~shared_ptr~ILogSink~~
+    - bufferSize     : size_t
+    - threadPoolSize : size_t
+    --
+    + LogManagerBuilder()
+    + setBufferSize(size)     : LogManagerBuilder&
+    + setThreadPoolSize(size) : LogManagerBuilder&
+    + addSink(sink)           : LogManagerBuilder&
+    + build()                 : unique_ptr~LogManager~
+  }
+
+  class LogSinkFactory <<static>> #0D1318 {
+    --
+    + {static} create(type : LogSinkType_enum, param : string) : shared_ptr~ILogSink~
+    .. deleted ..
+    - LogSinkFactory() = delete
+  }
+
+  class LogFormatter <<template>> #0D1318 {
+    --
+    + formatDataToLogMsg(raw : string) : optional~LogMessage~
+    - msgDescription(val : float)     : string
+    - telemetrySourceToString(src)    : string
+    - convertToPhase1Severity(sev)    : Severity
+  }
+
+  note bottom of LogFormatter
+    Policy provides:
+    · context  : TelemetrySrc_enum
+    · unit     : string_view
+    · WARNING  : float (constexpr)
+    · CRITICAL : float (constexpr)
+    · inferSeverity(val) : SeverityLvl_enum
+  end note
+
+  class TelemetryReader <<template>> #0D1318 {
+    - source       : ITelemetrySource&
+    - logManager   : LogManager&
+    - formatter    : LogFormatter
+    - readerThread : thread
+    - running      : atomic~bool~
+    - readInterval : milliseconds
+    --
+    + TelemetryReader(source, logManager, interval)
+    + start()
+    + stop()
+    + isRunning() : bool
+    - readLoop()
+  }
+
+  class CpuPolicy <<struct>> #0D1318 {
+    + {static} context  : TelemetrySrc_enum = CPU
+    + {static} unit     : string_view = "%"
+    + {static} WARNING  : float = 75.0
+    + {static} CRITICAL : float = 90.0
+    + {static} inferSeverity(val) : SeverityLvl_enum
+  }
+
+  class RamPolicy <<struct>> #0D1318 {
+    + {static} context  : TelemetrySrc_enum = RAM
+    + {static} unit     : string_view = "%"
+    + {static} WARNING  : float = 70.0
+    + {static} CRITICAL : float = 85.0
+    + {static} inferSeverity(val) : SeverityLvl_enum
+  }
+
+  class GpuPolicy <<struct>> #0D1318 {
+    + {static} context  : TelemetrySrc_enum = GPU
+    + {static} unit     : string_view = "%"
+    + {static} WARNING  : float = 80.0
+    + {static} CRITICAL : float = 95.0
+    + {static} inferSeverity(val) : SeverityLvl_enum
+  }
+
+}
+
+' ═══════════════════════════════════════════════════════════════
+' PHASE 4 -- CONCURRENT PIPELINE
+' ═══════════════════════════════════════════════════════════════
+
+package "Phase 4 -- Concurrent Pipeline" #080C10 {
+
+  class RingBuffer <<template>> #0D1318 {
+    - buffer      : vector~optional~T~~
+    - head        : size_t
+    - tail        : size_t
+    - count       : size_t
+    - capacity    : size_t
+    - bufferMutex : mutex
+    - notEmpty    : condition_variable
+    - notFull     : condition_variable
+    - shutdownFlag: atomic~bool~
+    --
+    + RingBuffer(capacity : size_t)
+    + tryPush(item : T&&) : bool
+    + tryPop(item : T&)   : bool
+    + push(item : T&&)
+    + pop(item : T&)      : bool
+    + shutdown()
+    + isFull()    : bool
+    + isEmpty()   : bool
+    + size()      : size_t
+    + getCapacity(): size_t
+  }
+
+  class ThreadPool #0D1318 {
+    - workers   : vector~thread~
+    - tasks     : queue~function~void()~~
+    - queueMutex: mutex
+    - condition : condition_variable
+    - stopFlag  : atomic~bool~
+    --
+    + ThreadPool(numThreads : size_t)
+    + ~ThreadPool()
+    + enqueue(task : F&&)
+    + size() : size_t
+    - workerLoop()
+  }
+
+}
+
+' ═══════════════════════════════════════════════════════════════
+' PHASE 5 -- SOME/IP · COMMONAPI · RPi3
+' ═══════════════════════════════════════════════════════════════
+
+package "Phase 5 -- SOME/IP · CommonAPI · RPi3" #080C10 {
+
+  class SomeIPTelemetrySourceImpl #0D1318 {
+    - runtime_  : shared_ptr~CommonAPI::Runtime~
+    - proxy_    : shared_ptr~GpuUsageDataProxy~
+    - connected_: bool
+    --
+    + SomeIPTelemetrySourceImpl()
+    + openSource()             : bool override
+    + readSource(out : string) : bool override
+  }
+
+  class GpuServiceImpl #0D1318 {
+    - broadcastThread_ : thread
+    - broadcasting_    : atomic~bool~
+    --
+    + GpuServiceImpl()
+    + requestGpuUsageData(client, reply) override
+    + startEventBroadcast()
+    + stopEventBroadcast()
+    - broadcastLoop()
+    - readGpuUsage() : float
+  }
+
+  note right of GpuServiceImpl
+    Runs on RPi3 (aarch64)
+    Inherits: GpuUsageDataStubDefault
+    (CommonAPI auto-generated)
+    reads /sys/ + /proc/
+  end note
+
+  note right of SomeIPTelemetrySourceImpl
+    Runs on PC (x86_64)
+    Uses: GpuUsageDataSomeIPProxy
+    (CommonAPI auto-generated)
+    Communicates via SOME/IP over LAN
+  end note
+
+}
+
+' ═══════════════════════════════════════════════════════════════
+' PHASE 6 -- FAÇADE · CONFIG · SYSTEM
+' ═══════════════════════════════════════════════════════════════
+
+package "Phase 6 -- Façade · JSON Config · Hot-Reload" #080C10 {
+
+  class SystemTelemetryWriter #0D1318 {
+    - outputFile : SafeFile
+    - outputPath : string
+    --
+    + SystemTelemetryWriter(outputPath : string)
+    + writeCpuTelemetry()    : bool
+    + writeMemoryTelemetry() : bool
+    + isOpen() : bool
+  }
+
+  class TelemetrySystem <<Facade>> #0D1318 {
+    - logManager_    : unique_ptr~LogManager~
+    - sources_       : vector~unique_ptr~ITelemetrySource~~
+    - readers_       : vector~shared_ptr~void~~
+    - startFns_      : vector~function~void()~~
+    - stopFns_       : vector~function~void()~~
+    - cpuWriter_     : unique_ptr~SystemTelemetryWriter~
+    - ramWriter_     : unique_ptr~SystemTelemetryWriter~
+    - writerThread_  : thread
+    - writerRunning_ : atomic~bool~
+    - running_       : bool
+    --
+    + TelemetrySystem(configPath : string)
+    + start()
+    + stop()
+    + reload(configPath : string)
+    + ~TelemetrySystem()
+    - buildLogManager(cfg : json)
+    - buildSources(cfg : json)
+    - writerLoop()
+  }
+
+  note bottom of TelemetrySystem
+    readers_ uses shared_ptr~void~
+    for type erasure -- stores any
+    TelemetryReader without
+    a common base class.
+    Config reloaded via SIGHUP signal.
+  end note
+
+}
+
+' ═══════════════════════════════════════════════════════════════
+' RELATIONSHIPS
+' ═══════════════════════════════════════════════════════════════
+
+' Inheritance -- Sinks
+ILogSink <|.. ConsoleSinkImpl   : implements
+ILogSink <|.. FileSinkImpl      : implements
+ILogSink <|.. SocketSinkImpl    : implements
+
+' Inheritance -- Sources
+ITelemetrySource <|.. FileTelemetrySourceImpl    : implements
+ITelemetrySource <|.. SocketTelemetrySourceImpl  : implements
+ITelemetrySource <|.. SomeIPTelemetrySourceImpl  : implements
+
+' LogMessage uses Severity
+LogMessage ..> Severity : uses
+
+' LogManager owns RingBuffer and ThreadPool
+LogManager *-- RingBuffer : owns
+LogManager *-- ThreadPool : owns
+LogManager o-- ILogSink   : holds sinks
+
+' TelemetryReader uses LogManager and ITelemetrySource
+TelemetryReader ..> LogManager        : calls log()
+TelemetryReader o-- ITelemetrySource  : reads from
+TelemetryReader *-- LogFormatter      : owns
+
+' LogFormatter uses Policies
+LogFormatter ..> CpuPolicy : parameterized by
+LogFormatter ..> RamPolicy : parameterized by
+LogFormatter ..> GpuPolicy : parameterized by
+
+' Policy uses enums
+CpuPolicy ..> TelemetrySrc_enum  : uses
+CpuPolicy ..> SeverityLvl_enum   : uses
+RamPolicy ..> TelemetrySrc_enum  : uses
+RamPolicy ..> SeverityLvl_enum   : uses
+GpuPolicy ..> TelemetrySrc_enum  : uses
+GpuPolicy ..> SeverityLvl_enum   : uses
+
+' RAII usage
+FileSinkImpl         *-- SafeFile   : owns (RAII)
+FileTelemetrySourceImpl *-- SafeFile  : owns (RAII)
+SocketTelemetrySourceImpl *-- SafeSocket : owns (RAII)
+SocketSinkImpl       *-- SafeSocket : owns (RAII)
+SystemTelemetryWriter *-- SafeFile  : owns (RAII)
+
+' Builder and Factory
+LogManagerBuilder ..> LogManager    : builds
+LogManagerBuilder ..> ILogSink      : uses
+LogSinkFactory    ..> ILogSink      : creates
+LogSinkFactory    ..> LogSinkType_enum : uses
+
+' Façade owns everything
+TelemetrySystem *-- LogManager             : owns
+TelemetrySystem o-- ITelemetrySource       : owns sources
+TelemetrySystem ..> TelemetryReader        : creates & stores (type-erased)
+TelemetrySystem *-- SystemTelemetryWriter  : owns (cpu + ram)
+TelemetrySystem ..> LogManagerBuilder      : uses to build
+TelemetrySystem ..> LogSinkFactory         : uses to create sinks
+
+@enduml

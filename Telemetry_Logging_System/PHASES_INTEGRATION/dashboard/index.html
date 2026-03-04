@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OmniMetron — Telemetry Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:        #080c10;
+    --panel:     #0d1318;
+    --border:    #1a2530;
+    --accent:    #00d4ff;
+    --info:      #00d4ff;
+    --warning:   #f0a500;
+    --critical:  #ff3355;
+    --ok:        #00e676;
+    --text:      #c8d8e8;
+    --dim:       #4a6070;
+    --cpu-color: #00d4ff;
+    --ram-color: #a855f7;
+    --gpu-color: #00e676;
+    --sock-color:#f0a500;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 15px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,212,255,0.015) 2px,
+      rgba(0,212,255,0.015) 4px
+    );
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 28px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(90deg, #080c10, #0d1520);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .logo-icon {
+    width: 38px; height: 38px;
+    border: 2px solid var(--accent);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+    box-shadow: 0 0 12px rgba(0,212,255,0.3);
+  }
+
+  .logo-icon::before {
+    content: '';
+    width: 16px; height: 16px;
+    border: 2px solid var(--accent);
+    border-radius: 50%;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(0,212,255,0.4); }
+    50%       { box-shadow: 0 0 0 6px rgba(0,212,255,0); }
+  }
+
+  .logo-text { font-size: 22px; font-weight: 700; letter-spacing: 3px; color: var(--accent); }
+  .logo-sub  { font-family: 'Share Tech Mono'; font-size: 11px; color: var(--dim); letter-spacing: 2px; }
+
+  .header-right { display: flex; align-items: center; gap: 20px; }
+
+  .status-badge {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: 'Share Tech Mono'; font-size: 12px;
+  }
+
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--dim);
+    transition: background 0.3s;
+  }
+
+  .status-dot.online  { background: var(--ok);       box-shadow: 0 0 6px var(--ok); }
+  .status-dot.offline { background: var(--critical);  box-shadow: 0 0 6px var(--critical); }
+
+  .time-display {
+    font-family: 'Share Tech Mono'; font-size: 13px; color: var(--dim);
+  }
+
+  /* ── Layout ── */
+  .main {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    grid-template-rows: auto 1fr;
+    gap: 0;
+    height: calc(100vh - 65px);
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    grid-row: 1 / 3;
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .sidebar-section {
+    padding: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-label {
+    font-family: 'Share Tech Mono'; font-size: 10px;
+    color: var(--dim); letter-spacing: 2px;
+    margin-bottom: 14px;
+    text-transform: uppercase;
+  }
+
+  /* Source cards */
+  .source-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .source-card::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--source-color, var(--dim));
+    transition: width 0.2s;
+  }
+
+  .source-card:hover { border-color: var(--source-color, var(--dim)); }
+  .source-card:hover::before { width: 4px; }
+
+  .source-card.active::before { box-shadow: 0 0 8px var(--source-color, var(--dim)); }
+
+  .source-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .source-name {
+    font-weight: 700; font-size: 14px; letter-spacing: 1px;
+    color: var(--source-color, var(--text));
+  }
+
+  .toggle-switch {
+    position: relative; width: 36px; height: 20px;
+  }
+
+  .toggle-switch input { opacity: 0; width: 0; height: 0; }
+
+  .toggle-track {
+    position: absolute; inset: 0;
+    background: var(--border);
+    border-radius: 20px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .toggle-track::after {
+    content: '';
+    position: absolute;
+    left: 3px; top: 3px;
+    width: 14px; height: 14px;
+    background: var(--dim);
+    border-radius: 50%;
+    transition: all 0.2s;
+  }
+
+  .toggle-switch input:checked + .toggle-track {
+    background: rgba(0,212,255,0.2);
+    border: 1px solid var(--source-color, var(--accent));
+  }
+
+  .toggle-switch input:checked + .toggle-track::after {
+    left: 18px;
+    background: var(--source-color, var(--accent));
+    box-shadow: 0 0 6px var(--source-color, var(--accent));
+  }
+
+  .source-value {
+    font-family: 'Share Tech Mono'; font-size: 22px;
+    color: var(--source-color, var(--text));
+  }
+
+  .source-value span { font-size: 12px; color: var(--dim); }
+
+  .source-severity {
+    font-size: 11px; letter-spacing: 1px;
+    padding: 2px 7px; border-radius: 3px;
+    font-weight: 600;
+  }
+
+  .sev-INFO     { color: var(--info);     background: rgba(0,212,255,0.08); }
+  .sev-WARNING  { color: var(--warning);  background: rgba(240,165,0,0.08); }
+  .sev-CRITICAL { color: var(--critical); background: rgba(255,51,85,0.08); animation: blink 1s infinite; }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+  }
+
+  .rate-control {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 8px;
+  }
+
+  .rate-control label {
+    font-family: 'Share Tech Mono'; font-size: 10px; color: var(--dim);
+  }
+
+  .rate-input {
+    background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); font-family: 'Share Tech Mono'; font-size: 11px;
+    padding: 3px 6px; border-radius: 3px; width: 65px;
+  }
+
+  /* Apply button */
+  .apply-btn {
+    width: 100%; padding: 10px;
+    background: transparent;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-family: 'Rajdhani'; font-weight: 700;
+    font-size: 13px; letter-spacing: 2px;
+    border-radius: 4px; cursor: pointer;
+    transition: all 0.2s;
+    margin-top: 4px;
+  }
+
+  .apply-btn:hover {
+    background: rgba(0,212,255,0.1);
+    box-shadow: 0 0 12px rgba(0,212,255,0.2);
+  }
+
+  .apply-btn:active { transform: scale(0.98); }
+
+  .reload-status {
+    font-family: 'Share Tech Mono'; font-size: 11px;
+    text-align: center; margin-top: 8px; min-height: 16px;
+    color: var(--ok); opacity: 0; transition: opacity 0.3s;
+  }
+
+  .reload-status.show { opacity: 1; }
+
+  /* ── Content area ── */
+  .content-top {
+    padding: 20px 24px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .content-bottom {
+    padding: 0 24px 20px;
+    overflow-y: auto;
+    display: flex; flex-direction: column;
+  }
+
+  /* Chart area */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    padding-bottom: 16px;
+  }
+
+  .chart-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    position: relative;
+  }
+
+  .chart-panel.full-width {
+    grid-column: 1 / -1;
+  }
+
+  .chart-title {
+    font-family: 'Share Tech Mono'; font-size: 11px;
+    color: var(--dim); letter-spacing: 2px;
+    margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .chart-title::before {
+    content: '';
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--chart-color, var(--accent));
+    box-shadow: 0 0 6px var(--chart-color, var(--accent));
+  }
+
+  .chart-wrap { position: relative; height: 140px; }
+
+  /* Threshold lines labels */
+  .thresholds {
+    display: flex; gap: 14px; margin-top: 6px;
+  }
+
+  .thresh-tag {
+    font-family: 'Share Tech Mono'; font-size: 10px;
+    display: flex; align-items: center; gap: 5px;
+  }
+
+  .thresh-line {
+    width: 16px; height: 2px; border-radius: 1px;
+  }
+
+  /* ── Log Feed ── */
+  .log-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    flex: 1;
+    min-height: 220px;
+    display: flex; flex-direction: column;
+    margin-bottom: 0;
+  }
+
+  .log-header {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+
+  .log-title {
+    font-family: 'Share Tech Mono'; font-size: 11px;
+    color: var(--dim); letter-spacing: 2px;
+  }
+
+  .log-count {
+    font-family: 'Share Tech Mono'; font-size: 11px;
+    color: var(--accent);
+  }
+
+  .log-body {
+    flex: 1; overflow-y: auto; padding: 8px 0;
+    max-height: 260px;
+  }
+
+  .log-body::-webkit-scrollbar { width: 4px; }
+  .log-body::-webkit-scrollbar-track { background: transparent; }
+  .log-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .log-entry {
+    display: grid;
+    grid-template-columns: 80px 50px 60px 1fr;
+    gap: 10px;
+    padding: 5px 16px;
+    font-family: 'Share Tech Mono'; font-size: 12px;
+    border-bottom: 1px solid rgba(26,37,48,0.5);
+    animation: fadeIn 0.3s ease;
+    transition: background 0.15s;
+  }
+
+  .log-entry:hover { background: rgba(0,212,255,0.03); }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateX(-6px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+
+  .log-time   { color: var(--dim); font-size: 11px; }
+  .log-source { font-weight: 700; }
+  .log-source.CPU  { color: var(--cpu-color); }
+  .log-source.RAM  { color: var(--ram-color); }
+  .log-source.GPU  { color: var(--gpu-color); }
+  .log-source.SOCK { color: var(--sock-color); }
+
+  .log-sev {
+    font-size: 10px; font-weight: 600; letter-spacing: 1px;
+    align-self: center;
+  }
+
+  .log-sev.INFO     { color: var(--info); }
+  .log-sev.WARNING  { color: var(--warning); }
+  .log-sev.CRITICAL { color: var(--critical); }
+
+  .log-msg { color: var(--text); }
+
+  /* ── Stats bar ── */
+  .stats-bar {
+    display: flex; gap: 16px;
+    padding: 14px 0 16px;
+  }
+
+  .stat-chip {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 14px;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+
+  .stat-label { font-family: 'Share Tech Mono'; font-size: 9px; color: var(--dim); letter-spacing: 1px; }
+  .stat-value { font-family: 'Share Tech Mono'; font-size: 16px; color: var(--text); }
+  .stat-value.info     { color: var(--info); }
+  .stat-value.warning  { color: var(--warning); }
+  .stat-value.critical { color: var(--critical); }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <div class="logo">
+    <div class="logo-icon"></div>
+    <div>
+      <div class="logo-text">OMNIMETRON</div>
+      <div class="logo-sub">TELEMETRY DASHBOARD v6.0</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="status-badge">
+      <div class="status-dot" id="appDot"></div>
+      <span id="appStatus" style="font-family:'Share Tech Mono'">CHECKING...</span>
+    </div>
+    <div class="time-display" id="clock">--:--:--</div>
+  </div>
+</header>
+
+<!-- Main Layout -->
+<div class="main">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+
+    <!-- Source Controls -->
+    <div class="sidebar-section">
+      <div class="section-label">Telemetry Sources</div>
+
+      <!-- CPU -->
+      <div class="source-card" id="card-cpu" style="--source-color: var(--cpu-color)">
+        <div class="source-header">
+          <div class="source-name">CPU</div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggle-cpu" onchange="onToggle()">
+            <div class="toggle-track"></div>
+          </label>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div class="source-value" id="val-cpu">--<span>%</span></div>
+          <div class="source-severity sev-INFO" id="sev-cpu">INFO</div>
+        </div>
+        <div class="rate-control">
+          <label>RATE MS</label>
+          <input class="rate-input" type="number" id="rate-cpu" value="1000" min="100" step="100">
+        </div>
+      </div>
+
+      <!-- RAM -->
+      <div class="source-card" id="card-ram" style="--source-color: var(--ram-color)">
+        <div class="source-header">
+          <div class="source-name">RAM</div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggle-ram" onchange="onToggle()">
+            <div class="toggle-track"></div>
+          </label>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div class="source-value" id="val-ram">--<span>%</span></div>
+          <div class="source-severity sev-INFO" id="sev-ram">INFO</div>
+        </div>
+        <div class="rate-control">
+          <label>RATE MS</label>
+          <input class="rate-input" type="number" id="rate-ram" value="1000" min="100" step="100">
+        </div>
+      </div>
+
+      <!-- GPU SOME/IP -->
+      <div class="source-card" id="card-gpu" style="--source-color: var(--gpu-color)">
+        <div class="source-header">
+          <div class="source-name">GPU / SOME-IP</div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggle-gpu" onchange="onToggle()">
+            <div class="toggle-track"></div>
+          </label>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div class="source-value" id="val-gpu">--<span>°C</span></div>
+          <div class="source-severity sev-INFO" id="sev-gpu">INFO</div>
+        </div>
+        <div class="rate-control">
+          <label>RATE MS</label>
+          <input class="rate-input" type="number" id="rate-gpu" value="2000" min="100" step="100">
+        </div>
+      </div>
+
+      <!-- Socket -->
+      <div class="source-card" id="card-socket" style="--source-color: var(--sock-color)">
+        <div class="source-header">
+          <div class="source-name">SOCKET</div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggle-socket" onchange="onToggle()">
+            <div class="toggle-track"></div>
+          </label>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div class="source-value" id="val-socket">--<span>%</span></div>
+          <div class="source-severity sev-INFO" id="sev-socket">INFO</div>
+        </div>
+        <div class="rate-control">
+          <label>RATE MS</label>
+          <input class="rate-input" type="number" id="rate-socket" value="500" min="100" step="100">
+        </div>
+      </div>
+    </div>
+
+    <!-- Apply -->
+    <div class="sidebar-section">
+      <button class="apply-btn" onclick="applyConfig()">⟳ APPLY &amp; RELOAD</button>
+      <div class="reload-status" id="reloadStatus">CONFIG RELOADED</div>
+    </div>
+
+    <!-- Sinks status -->
+    <div class="sidebar-section">
+      <div class="section-label">Active Sinks</div>
+      <div id="sinksDisplay" style="display:flex;flex-direction:column;gap:6px;font-family:'Share Tech Mono';font-size:11px;color:var(--dim)">
+        Loading...
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- Top content: stats + charts -->
+  <div class="content-top">
+
+    <!-- Stats bar -->
+    <div class="stats-bar">
+      <div class="stat-chip">
+        <div class="stat-label">TOTAL MESSAGES</div>
+        <div class="stat-value" id="statTotal">0</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-label">INFO</div>
+        <div class="stat-value info" id="statInfo">0</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-label">WARNING</div>
+        <div class="stat-value warning" id="statWarn">0</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-label">CRITICAL</div>
+        <div class="stat-value critical" id="statCrit">0</div>
+      </div>
+      <div class="stat-chip" style="margin-left:auto">
+        <div class="stat-label">PIPELINE</div>
+        <div class="stat-value" style="font-size:11px;color:var(--dim)">RingBuffer → ThreadPool → Sinks</div>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="charts-grid">
+
+      <div class="chart-panel" style="--chart-color: var(--cpu-color)">
+        <div class="chart-title">CPU USAGE</div>
+        <div class="chart-wrap"><canvas id="chartCpu"></canvas></div>
+        <div class="thresholds">
+          <div class="thresh-tag"><div class="thresh-line" style="background:var(--warning)"></div>WARN 75%</div>
+          <div class="thresh-tag"><div class="thresh-line" style="background:var(--critical)"></div>CRIT 90%</div>
+        </div>
+      </div>
+
+      <div class="chart-panel" style="--chart-color: var(--ram-color)">
+        <div class="chart-title">RAM USAGE</div>
+        <div class="chart-wrap"><canvas id="chartRam"></canvas></div>
+        <div class="thresholds">
+          <div class="thresh-tag"><div class="thresh-line" style="background:var(--warning)"></div>WARN 70%</div>
+          <div class="thresh-tag"><div class="thresh-line" style="background:var(--critical)"></div>CRIT 85%</div>
+        </div>
+      </div>
+
+      <div class="chart-panel" style="--chart-color: var(--gpu-color)">
+        <div class="chart-title">GPU / SOME-IP TEMPERATURE</div>
+        <div class="chart-wrap"><canvas id="chartGpu"></canvas></div>
+        <div class="thresholds">
+          <div class="thresh-tag"><div class="thresh-line" style="background:var(--warning)"></div>WARN 80°C</div>
+          <div class="thresh-tag"><div class="thresh-line" style="background:var(--critical)"></div>CRIT 95°C</div>
+        </div>
+      </div>
+
+      <div class="chart-panel" style="--chart-color: var(--sock-color)">
+        <div class="chart-title">SOCKET INPUT</div>
+        <div class="chart-wrap"><canvas id="chartSock"></canvas></div>
+        <div class="thresholds">
+          <div class="thresh-tag"><div class="thresh-line" style="background:var(--warning)"></div>WARN 80%</div>
+          <div class="thresh-tag"><div class="thresh-line" style="background:var(--critical)"></div>CRIT 95%</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Bottom content: log feed -->
+  <div class="content-bottom">
+    <div class="log-panel">
+      <div class="log-header">
+        <div class="log-title">LIVE LOG FEED</div>
+        <div class="log-count" id="logCount">0 entries</div>
+      </div>
+      <div class="log-body" id="logBody"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── Chart setup ───────────────────────────────────────────────
+const MAX_POINTS = 60;
+
+function makeChart(id, color, warnVal, critVal) {
+  const ctx = document.getElementById(id).getContext('2d');
+  const labels = Array(MAX_POINTS).fill('');
+  const data   = Array(MAX_POINTS).fill(null);
+
+  return new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        borderColor: color,
+        borderWidth: 2,
+        backgroundColor: color + '18',
+        fill: true,
+        tension: 0.4,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 200 },
+      plugins: {
+        legend: { display: false },
+        annotation: {
+          annotations: {
+            warn: { type:'line', yMin:warnVal, yMax:warnVal, borderColor:'rgba(240,165,0,0.5)', borderWidth:1, borderDash:[4,4] },
+            crit: { type:'line', yMin:critVal, yMax:critVal, borderColor:'rgba(255,51,85,0.5)',  borderWidth:1, borderDash:[4,4] },
+          }
+        }
+      },
+      scales: {
+        x: { display: false },
+        y: {
+          min: 0, max: 100,
+          grid: { color: 'rgba(26,37,48,0.8)' },
+          ticks: { color: '#4a6070', font: { family: 'Share Tech Mono', size: 10 }, maxTicksLimit: 5 }
+        }
+      }
+    }
+  });
+}
+
+const charts = {
+  CPU:  makeChart('chartCpu',  '#00d4ff', 75, 90),
+  RAM:  makeChart('chartRam',  '#a855f7', 70, 85),
+  GPU:  makeChart('chartGpu',  '#00e676', 80, 95),
+  SOCK: makeChart('chartSock', '#f0a500', 80, 95),
+};
+
+function pushToChart(source, value) {
+  const chart = charts[source];
+  if (!chart) return;
+  chart.data.datasets[0].data.push(value);
+  chart.data.labels.push('');
+  if (chart.data.datasets[0].data.length > MAX_POINTS) {
+    chart.data.datasets[0].data.shift();
+    chart.data.labels.shift();
+  }
+  chart.update('none');
+}
+
+// ── Source → chart key mapping ────────────────────────────────
+// Uses entry.chart (set by dashboard.py) to correctly route socket
+// data to SOCK chart instead of GPU chart. Both SocketTelemetrySourceImpl
+// and SomeIPTelemetrySourceImpl log as [GPU] — entry.chart is the
+// only field that distinguishes them.
+function chartKey(entry) {
+  const chart = entry.chart || entry.source.toLowerCase();
+  if (chart === 'cpu')    return 'CPU';
+  if (chart === 'ram')    return 'RAM';
+  if (chart === 'socket') return 'SOCK';
+  if (chart === 'gpu')    return 'GPU';
+  // fallback by source name
+  if (entry.source === 'CPU') return 'CPU';
+  if (entry.source === 'RAM') return 'RAM';
+  return 'GPU';
+}
+
+// ── Stats counters ────────────────────────────────────────────
+const stats = { total: 0, INFO: 0, WARNING: 0, CRITICAL: 0 };
+
+function updateStats(severity) {
+  stats.total++;
+  if (stats[severity] !== undefined) stats[severity]++;
+  document.getElementById('statTotal').textContent = stats.total;
+  document.getElementById('statInfo').textContent  = stats.INFO;
+  document.getElementById('statWarn').textContent  = stats.WARNING;
+  document.getElementById('statCrit').textContent  = stats.CRITICAL;
+}
+
+// ── Severity styling ──────────────────────────────────────────
+function sevClass(sev) {
+  if (sev === 'WARNING')  return 'sev-WARNING';
+  if (sev === 'CRITICAL') return 'sev-CRITICAL';
+  return 'sev-INFO';
+}
+
+// ── Log feed ──────────────────────────────────────────────────
+const MAX_LOG_ENTRIES = 100;
+let logCount = 0;
+
+function addLogEntry(entry) {
+  const body = document.getElementById('logBody');
+  const key  = chartKey(entry);
+
+  const row = document.createElement('div');
+  row.className = 'log-entry';
+
+  const time = entry.timestamp.split(' ')[1] || entry.timestamp;
+  row.innerHTML = `
+    <div class="log-time">${time}</div>
+    <div class="log-source ${key}">${entry.source}${key==='SOCK'?' (SOCK)':''}</div>
+    <div class="log-sev ${entry.severity}">${entry.severity}</div>
+    <div class="log-msg">${entry.message}</div>
+  `;
+
+  body.prepend(row);
+  logCount++;
+  document.getElementById('logCount').textContent = logCount + ' entries';
+
+  while (body.children.length > MAX_LOG_ENTRIES) {
+    body.removeChild(body.lastChild);
+  }
+}
+
+// ── Source card updates ───────────────────────────────────────
+function updateSourceCard(entry) {
+  const key = chartKey(entry);
+  const idMap = { CPU: 'cpu', RAM: 'ram', GPU: 'gpu', SOCK: 'socket' };
+  const id = idMap[key];
+
+  // Update value
+  const valEl = document.getElementById('val-' + id);
+  if (valEl) valEl.innerHTML = entry.value.toFixed(1) + '<span>' + (key === 'GPU' ? '°C' : '%') + '</span>';
+
+  // Update severity badge
+  const sevEl = document.getElementById('sev-' + id);
+  if (sevEl) {
+    sevEl.textContent  = entry.severity;
+    sevEl.className = 'source-severity ' + sevClass(entry.severity);
+  }
+
+  // Active glow on card
+  const card = document.getElementById('card-' + id);
+  if (card) {
+    card.classList.add('active');
+    setTimeout(() => card.classList.remove('active'), 500);
+  }
+}
+
+// ── Process incoming entry ────────────────────────────────────
+function processEntry(entry) {
+  const key = chartKey(entry);
+  pushToChart(key, entry.value);
+  updateSourceCard(entry);
+  addLogEntry(entry);
+  updateStats(entry.severity);
+}
+
+// ── Load initial logs ─────────────────────────────────────────
+fetch('/api/logs')
+  .then(r => r.json())
+  .then(logs => {
+    logs.forEach(e => {
+      const key = chartKey(e);
+      pushToChart(key, e.value);
+      updateStats(e.severity);
+    });
+    logs.slice(-50).reverse().forEach(e => addLogEntry(e));
+  });
+
+// ── SSE stream for live updates ───────────────────────────────
+const evtSource = new EventSource('/api/stream');
+evtSource.onmessage = (e) => {
+  try {
+    const entry = JSON.parse(e.data);
+    processEntry(entry);
+  } catch(err) {}
+};
+
+// ── Load config into sidebar ──────────────────────────────────
+function loadConfig() {
+  fetch('/api/config')
+    .then(r => r.json())
+    .then(cfg => {
+      document.getElementById('toggle-cpu').checked    = cfg.sources.cpu.enabled;
+      document.getElementById('toggle-ram').checked    = cfg.sources.ram.enabled;
+      document.getElementById('toggle-gpu').checked    = cfg.sources.gpu_someip.enabled;
+      document.getElementById('toggle-socket').checked = cfg.sources.socket.enabled;
+
+      document.getElementById('rate-cpu').value    = cfg.sources.cpu.parse_rate_ms;
+      document.getElementById('rate-ram').value    = cfg.sources.ram.parse_rate_ms;
+      document.getElementById('rate-gpu').value    = cfg.sources.gpu_someip.parse_rate_ms;
+      document.getElementById('rate-socket').value = cfg.sources.socket.parse_rate_ms;
+
+      // Sinks display
+      const sinks = cfg.sinks;
+      const sinksEl = document.getElementById('sinksDisplay');
+      sinksEl.innerHTML = Object.entries(sinks).map(([name, s]) => `
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="width:6px;height:6px;border-radius:50%;background:${s.enabled ? 'var(--ok)' : 'var(--dim)'}"></div>
+          <span style="color:${s.enabled ? 'var(--text)' : 'var(--dim)'}">
+            ${name.toUpperCase()}${s.path ? ' → ' + s.path : ''}
+          </span>
+        </div>
+      `).join('');
+    });
+}
+
+loadConfig();
+
+// ── Toggle handler (visual only — apply sends to server) ──────
+function onToggle() {
+  // visual feedback only — actual apply on button click
+}
+
+// ── Apply config ──────────────────────────────────────────────
+function applyConfig() {
+  fetch('/api/config')
+    .then(r => r.json())
+    .then(cfg => {
+
+      // Update toggles
+      cfg.sources.cpu.enabled        = document.getElementById('toggle-cpu').checked;
+      cfg.sources.ram.enabled        = document.getElementById('toggle-ram').checked;
+      cfg.sources.gpu_someip.enabled = document.getElementById('toggle-gpu').checked;
+      cfg.sources.socket.enabled     = document.getElementById('toggle-socket').checked;
+
+      // Update rates
+      cfg.sources.cpu.parse_rate_ms        = parseInt(document.getElementById('rate-cpu').value);
+      cfg.sources.ram.parse_rate_ms        = parseInt(document.getElementById('rate-ram').value);
+      cfg.sources.gpu_someip.parse_rate_ms = parseInt(document.getElementById('rate-gpu').value);
+      cfg.sources.socket.parse_rate_ms     = parseInt(document.getElementById('rate-socket').value);
+
+      return fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cfg)
+      });
+    })
+    .then(r => r.json())
+    .then(res => {
+      const status = document.getElementById('reloadStatus');
+      status.textContent = res.status === 'reloaded' ? '✓ RELOADED' : '✓ SAVED';
+      status.classList.add('show');
+      setTimeout(() => status.classList.remove('show'), 3000);
+      setTimeout(loadConfig, 2000); // refresh sidebar after reload
+    })
+    .catch(() => {
+      const status = document.getElementById('reloadStatus');
+      status.textContent = '✗ ERROR';
+      status.style.color = 'var(--critical)';
+      status.classList.add('show');
+      setTimeout(() => status.classList.remove('show'), 3000);
+    });
+}
+
+// ── App status polling ────────────────────────────────────────
+function checkStatus() {
+  fetch('/api/status')
+    .then(r => r.json())
+    .then(s => {
+      const dot  = document.getElementById('appDot');
+      const text = document.getElementById('appStatus');
+      if (s.running) {
+        dot.className  = 'status-dot online';
+        text.textContent = 'ONLINE · PID ' + s.pid;
+      } else {
+        dot.className  = 'status-dot offline';
+        text.textContent = 'OFFLINE';
+      }
+    });
+}
+
+checkStatus();
+setInterval(checkStatus, 3000);
+
+// ── Clock ─────────────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toTimeString().slice(0, 8);
+}
+
+updateClock();
+setInterval(updateClock, 1000);
+</script>
+</body>
+</html>

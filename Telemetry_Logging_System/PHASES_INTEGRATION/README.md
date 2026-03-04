@@ -1,525 +1,257 @@
-# 🚀 Multi-Threaded Logging & Telemetry System
+# OmniMetron — Embedded Telemetry & Logging System
 
-A high-performance, asynchronous logging framework with real-time system telemetry monitoring, built from scratch in modern C++17.
-
-## 📋 Table of Contents
-- [Overview](#overview)
-- [Features](#features)
-- [Architecture](#architecture)
-- [Phase Evolution](#phase-evolution)
-- [Quick Start](#quick-start)
-- [Usage Examples](#usage-examples)
-- [Design Patterns](#design-patterns)
-- [Performance](#performance)
-- [Project Structure](#project-structure)
-- [Building](#building)
-- [Future Work](#future-work)
+> A production-grade C++17 telemetry and logging system built from scratch over 6 phases, demonstrating advanced software engineering patterns including the Façade, Builder, Factory, Observer, and Singleton design patterns, cross-compilation for ARM64 (Raspberry Pi 3), and real-time IPC via SOME/IP middleware.
 
 ---
 
-## 🎯 Overview
+## 📸 Live Dashboard
 
-This project implements a **production-grade logging system** that continuously monitors system resources (CPU, RAM, GPU) and logs events asynchronously using multi-threading. Think of it as a mini version of enterprise logging systems like **syslog** or **Logstash**, but built entirely from the ground up to understand the internals.
+![OmniMetron Dashboard](docs/dashboard.png)
 
-### What Makes It Special?
-
-- ⚡ **Zero-Blocking Logging**: Producer threads never wait - messages flow through a lock-free ring buffer
-- 🔄 **Parallel Processing**: ThreadPool distributes sink writes across multiple worker threads
-- 📊 **Real-Time Telemetry**: Continuous background monitoring of system resources
-- 🎛️ **Policy-Based Design**: Compile-time configuration using C++ policy classes
-- 🛡️ **RAII-Safe**: All resources (files, sockets, threads) are automatically managed
+> Real-time telemetry dashboard showing CPU, RAM, GPU (via SOME/IP from RPi3), and Socket input — all routed and severity-classified live.
 
 ---
 
-## ✨ Features
+## 🏗️ Architecture Overview
 
-### Core Logging
-- 📝 **Multiple Sink Support**: Console, File, Unix Domain Sockets
-- 🎨 **Structured Messages**: Timestamp, severity, context, and application name
-- 🏭 **Factory Pattern**: Easy creation of different sink types
-- 🔨 **Builder Pattern**: Fluent API for configuring the log manager
-
-### Asynchronous Processing (Phase 4)
-- 🔁 **Ring Buffer**: Thread-safe circular buffer with condition variables
-- 👷 **Thread Pool**: Reusable worker threads for parallel sink operations
-- 🧵 **Consumer Thread**: Dedicated thread for buffer processing
-- 🚪 **Graceful Shutdown**: Clean thread termination with buffer draining
-
-### Telemetry System (Phase 3)
-- 📈 **System Monitoring**: CPU, RAM, GPU usage tracking
-- 🤖 **Auto-Classification**: Automatic severity inference (INFO/WARNING/CRITICAL)
-- 📡 **Multiple Sources**: File-based, socket-based, or system-based readers
-- ⏱️ **Configurable Intervals**: Customize reading frequency per source
-
-### Safety & Reliability
-- 🔒 **Thread-Safe**: Mutex protection on all shared state
-- 💾 **RAII Wrappers**: SafeFile and SafeSocket prevent resource leaks
-- ⚠️ **Exception Handling**: Robust error handling throughout
-- 🧪 **Move Semantics**: Efficient resource transfer, no copies
-
----
-
-## 🏗️ Architecture
-
-### High-Level Flow
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Main Application                        │
-│  • Creates LogManager with ThreadPool                        │
-│  • Spawns TelemetryReaders (CPU, RAM, GPU)                  │
-│  • Each reader runs in its own thread                        │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        TelemetrySystem (Façade)                 │
+│                         app_config.json                         │
+├──────────────┬──────────────┬──────────────┬────────────────────┤
+│  CPU Source  │  RAM Source  │  GPU/SomeIP  │   Socket Source    │
+│  /proc/stat  │ /proc/meminfo│  RPi3→SOME/IP│  /tmp/telemetry   │
+└──────┬───────┴──────┬───────┴──────┬───────┴──────┬─────────────┘
+       │              │              │               │
+       └──────────────┴──────────────┴───────────────┘
                               │
-        ┌─────────────────────┼─────────────────────┐
-        ▼                     ▼                     ▼
-┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
-│ TelemetryReader  │ │ TelemetryReader  │ │ TelemetryReader  │
-│   <CpuPolicy>    │ │   <RamPolicy>    │ │   <GpuPolicy>    │
-│                  │ │                  │ │                  │
-│ • Reads source   │ │ • Reads source   │ │ • Reads source   │
-│ • Formats data   │ │ • Formats data   │ │ • Formats data   │
-│ • Calls log()    │ │ • Calls log()    │ │ • Calls log()    │
-└──────────────────┘ └──────────────────┘ └──────────────────┘
-        │                     │                     │
-        └─────────────────────┼─────────────────────┘
-                              ▼
-                    ┌──────────────────┐
-                    │   LogManager     │
-                    │                  │
-                    │ • RingBuffer     │ ◄── Multiple producers (non-blocking)
-                    │ • Mutex locked   │
-                    └──────────────────┘
-                              ▼
-                    ┌──────────────────┐
-                    │ Consumer Thread  │
-                    │                  │
-                    │ • Pops messages  │
-                    │ • Sends to pool  │
-                    └──────────────────┘
-                              ▼
-                    ┌──────────────────┐
-                    │   ThreadPool     │
-                    │                  │
-                    │ • 4-8 workers    │
-                    │ • Parallel write │
-                    └──────────────────┘
-                              ▼
-        ┌─────────────────────┼─────────────────────┐
-        ▼                     ▼                     ▼
-┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-│ ConsoleSink  │    │  FileSink    │    │ SocketSink   │
-└──────────────┘    └──────────────┘    └──────────────┘
+                    ┌─────────▼─────────┐
+                    │    RingBuffer      │
+                    │   (lock-free)      │
+                    └─────────┬─────────┘
+                              │
+                    ┌─────────▼─────────┐
+                    │    ThreadPool      │
+                    │  (N worker threads)│
+                    └─────────┬─────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+       ConsoleSink       FileSink        SocketSink
+       (stdout)      (output/app.log)  (/tmp/log.sock)
+                              │
+                    ┌─────────▼─────────┐
+                    │  Python Dashboard  │
+                    │  Flask + SSE       │
+                    │  localhost:5000    │
+                    └───────────────────┘
 ```
 
-### Thread Architecture
+---
 
-| Thread Type | Count | Purpose |
-|------------|-------|---------|
-| **Main Thread** | 1 | Orchestrates startup/shutdown |
-| **Telemetry Readers** | 3+ | Continuous data collection (CPU, RAM, GPU) |
-| **Consumer Thread** | 1 | Processes ring buffer |
-| **Worker Threads** | 4-8 | Parallel sink writing |
-| **Generator Thread** | 1 | (Optional) Simulates telemetry data |
+## ✨ Key Features
 
-**Total: ~10 threads running concurrently!** 🔥
+| Feature | Description |
+|---|---|
+| **6-Phase Architecture** | Incrementally built from basic logging to a full distributed telemetry system |
+| **Façade Pattern** | `TelemetrySystem` hides 80+ lines of wiring behind 4 clean methods |
+| **JSON Configuration** | Runtime reconfiguration via `app_config.json` — no recompile needed |
+| **Live Config Reload** | `SIGHUP` signal triggers hot-reload without restarting the process |
+| **SOME/IP Middleware** | CommonAPI + vsomeip for IPC between PC and Raspberry Pi 3 |
+| **Cross-Compilation** | ARM64 binary built on PC and deployed to RPi3 via CMake toolchain |
+| **ThreadPool + RingBuffer** | Non-blocking producer/consumer pipeline for high-throughput logging |
+| **Live Dashboard** | Flask server-sent events dashboard with real-time charts and severity alerts |
+| **Multiple Sinks** | Console, File, and Socket sinks — all configurable at runtime |
+| **Multiple Sources** | CPU (`/proc/stat`), RAM (`/proc/meminfo`), GPU (SOME/IP), Socket (Unix domain) |
 
 ---
 
-## 🔄 Phase Evolution
+## 🔧 Design Patterns Used
 
-This project was built incrementally across multiple phases:
-
-### Phase 1: Foundation (Basic Logging)
-**Goal**: Build a simple synchronous logging system
-
-**Topics Covered**:
-- C++ OOP fundamentals
-- Enums and switch statements
-- File I/O with `fstream`
-- Operator overloading
-
-**Deliverables**:
-- ✅ `LogMessage` class with severity levels
-- ✅ Console and File sinks
-- ✅ `LogManager` for sink management
-- ✅ Builder pattern for configuration
-
-### Phase 2: Design Patterns & Safety
-**Goal**: Make the system more flexible and safer
-
-**Topics Covered**:
-- Factory pattern
-- RAII (Resource Acquisition Is Initialization)
-- Move semantics
-- Unix domain sockets
-
-**Deliverables**:
-- ✅ `LogSinkFactory` for sink creation
-- ✅ `SafeFile` and `SafeSocket` RAII wrappers
-- ✅ Socket-based sink implementation
-- ✅ Move constructors/assignment operators
-
-### Phase 3: Telemetry & Policy-Based Design
-**Goal**: Add real-time system monitoring with generic programming
-
-**Topics Covered**:
-- Template classes and functions
-- Policy-based design
-- `/proc` filesystem parsing (Linux)
-- Compile-time configuration
-
-**Deliverables**:
-- ✅ `ITelemetrySource` interface
-- ✅ Policy classes (CpuPolicy, RamPolicy, GpuPolicy)
-- ✅ `LogFormatter<Policy>` template
-- ✅ `SystemTelemetryWriter` for CPU/RAM monitoring
-
-### Phase 4: Asynchronous & Multi-Threading ⭐ **(Current)**
-**Goal**: Transform into a high-performance async system
-
-**Topics Covered**:
-- `std::thread` fundamentals
-- `std::mutex` and `std::lock_guard`
-- `std::condition_variable` for producer-consumer
-- `std::atomic` for lock-free flags
-- Thread pools and worker patterns
-
-**Deliverables**:
-- ✅ Thread-safe `RingBuffer<T>` with blocking/non-blocking ops
-- ✅ `ThreadPool` for parallel task execution
-- ✅ Refactored `LogManager` with consumer thread
-- ✅ `TelemetryReader<Policy>` for continuous monitoring
-- ✅ Graceful shutdown with buffer draining
+| Pattern | Where | Purpose |
+|---|---|---|
+| **Façade** | `TelemetrySystem` | Single entry point hiding all subsystem complexity |
+| **Builder** | `LogManagerBuilder` | Fluent construction of LogManager with sinks |
+| **Factory** | `LogSinkFactory` | Creates sink instances by type enum |
+| **Singleton** | `GpuServiceImpl` | One CommonAPI runtime instance across all components |
+| **Observer** | `TelemetryReader<Policy>` | Polls source and pushes to LogManager |
+| **Strategy** | `CpuPolicy / RamPolicy / GpuPolicy` | Interchangeable severity inference logic |
+| **RAII** | `SafeFile / SafeSocket` | Resource lifetime tied to object lifetime |
+| **Type Erasure** | `TelemetrySystem` internals | Stores typed readers as `shared_ptr<void>` |
 
 ---
 
-## 🚀 Quick Start
+## 📁 Project Structure
+
+```
+PHASES_INTEGRATION/
+├── app/                        # Main executable (main.cpp)
+├── src/                        # All C++ source files (Phases 1–6)
+│   ├── generated/              # CommonAPI generated SOME/IP code
+│   └── fidl/                   # FIDL/FDEPL interface definitions
+├── include/                    # All header files
+├── tools/                      # gpu_service — deployed to RPi3
+├── tests/                      # Unit + integration tests
+├── config/
+│   ├── app_config.json         # Runtime configuration
+│   ├── vsomeip-client.json     # SOME/IP client config
+│   └── vsomeip-service.json    # SOME/IP service config
+├── cmake/
+│   └── aarch64-rpi3.cmake      # ARM64 cross-compilation toolchain
+├── dashboard/
+│   └── index.html              # Live telemetry dashboard UI
+├── output/
+│   └── app.log                 # Live log output
+├── dashboard.py                # Flask dashboard server
+├── demo_socket.sh              # Socket source demo script
+└── run_demo.sh                 # One-command demo launcher
+```
+
+---
+
+## 🚀 Build & Run
 
 ### Prerequisites
+
 ```bash
-# Ubuntu/Debian
-sudo apt-get install build-essential cmake
+# Required libraries (install on host PC)
+sudo apt install libvsomeip3-dev libcommonapi-dev libcommonapi-someip-dev
 
-# Fedora/RHEL
-sudo dnf install gcc-c++ cmake
+# For cross-compilation (RPi3)
+# Install crosstool-NG toolchain: aarch64-rpi3-linux-gnu
 ```
 
-### Build
+### Build (PC — x86_64)
+
 ```bash
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
+git clone <repo-url>
+cd PHASES_INTEGRATION
+cmake -B build
+cmake --build build
 ```
 
-### Run
+### Build (RPi3 — ARM64 cross-compile)
+
 ```bash
-./app/app
-```
-
-### Expected Output
-```
-=================================================
-    Phase 4: Asynchronous Logging System
-=================================================
-
-[MAIN] Creating LogManager...
-ThreadPool: Created with 4 worker threads
-[MAIN] LogManager started
-
-[MAIN] Starting telemetry readers...
-TelemetryReader: Started (CPU)
-TelemetryReader: Started (RAM)
-TelemetryReader: Started (GPU)
-
-[CPU],[2025-01-29 14:23:45],[Telemetry],[INFO],[CPU usage at 45.30%]
-[RAM],[2025-01-29 14:23:46],[Telemetry],[WARNING],[RAM usage at 72.50%]
-[GPU],[2025-01-29 14:23:47],[Telemetry],[CRITICAL],[GPU usage at 96.20%]
-...
-
-Press Ctrl+C to stop
+cmake -B build_rpi3 -DCMAKE_TOOLCHAIN_FILE=cmake/aarch64-rpi3.cmake
+cmake --build build_rpi3
+scp build_rpi3/tools/gpu_service pi@<rpi3-ip>:~/
 ```
 
 ---
 
-## 💡 Usage Examples
+## 🎬 Running the Demo
 
-### Example 1: Basic Logging
-```cpp
-// Create logger with 100-message buffer and 4 worker threads
-LogManager logger(100, 4);
+### One-Command Launch
 
-// Add sinks
-logger.addSink(LogSinkFactory::create(LogSinkType_enum::Console));
-logger.addSink(LogSinkFactory::create(LogSinkType_enum::File, "app.log"));
-
-// Start the consumer thread
-logger.start();
-
-// Log from anywhere (thread-safe!)
-logger.log(LogMessage("MyApp", "Init", Severity::INFO, "Application started"));
-logger.log(LogMessage("MyApp", "Database", Severity::WARNING, "Connection slow"));
-
-// Graceful shutdown (drains buffer)
-logger.stop();
+```bash
+chmod +x run_demo.sh
+./run_demo.sh
 ```
 
-### Example 2: Custom Telemetry Reader
-```cpp
-// Create a telemetry source
-FileTelemetrySourceImpl cpuSource("/tmp/cpu_data.txt");
+This opens:
+- **Terminal 1** — C++ telemetry engine (live log output)
+- **Terminal 2** — Python dashboard server (Flask + SSE)
+- **Browser** — `http://localhost:5000` (auto-opens after 3 seconds)
 
-// Create reader with CpuPolicy (reads every 500ms)
-TelemetryReader<CpuPolicy> cpuReader(
-    cpuSource, 
-    logger,
-    std::chrono::milliseconds(500)
-);
+### With Socket Demo
 
-// Start background reading
-cpuReader.start();
-
-// Reader continuously:
-// 1. Reads from source
-// 2. Parses value (e.g., "75.5")
-// 3. Infers severity using CpuPolicy thresholds
-// 4. Logs formatted message
-
-// Stop when done
-cpuReader.stop();
+```bash
+./run_demo.sh --socket
 ```
 
-### Example 3: Builder Pattern
-```cpp
-auto logger = LogManagerBuilder()
-    .setBufferSize(200)
-    .setThreadPoolSize(8)
-    .addSink(LogSinkFactory::create(LogSinkType_enum::Console))
-    .addSink(LogSinkFactory::create(LogSinkType_enum::File, "system.log"))
-    .build();
+Adds a third terminal that walks through INFO → WARNING → CRITICAL → RECOVERY cycle on the Socket Input chart.
 
-logger->start();
-// Use logger...
-logger->stop();
+### With RPi3 GPU Source
+
+```bash
+# On RPi3 (SSH):
+VSOMEIP_CONFIGURATION=vsomeip-service.json ./gpu_service
+
+# On PC:
+./run_demo.sh
+# Enable GPU/SOME-IP toggle in dashboard → Apply & Reload
+```
+
+### Stop Everything
+
+```bash
+./run_demo.sh --stop
 ```
 
 ---
 
-## 🎨 Design Patterns
+## ⚙️ Runtime Configuration
 
-### Factory Pattern
-```cpp
-// Abstract factory for creating sinks
-auto sink = LogSinkFactory::create(LogSinkType_enum::File, "output.log");
-```
+All sources and sinks are controlled via `config/app_config.json`:
 
-### Builder Pattern
-```cpp
-// Fluent API for configuration
-LogManagerBuilder()
-    .setBufferSize(100)
-    .addSink(consoleSink)
-    .build();
-```
-
-### Policy-Based Design
-```cpp
-// Compile-time customization via policy classes
-template<typename Policy>
-class LogFormatter {
-    // Uses Policy::context, Policy::unit, Policy::inferSeverity()
-};
-```
-
-### Producer-Consumer Pattern
-```cpp
-// Multiple producers (TelemetryReaders)
-// Single consumer (LogManager's consumer thread)
-// Synchronized via RingBuffer + condition_variable
-```
-
-### Thread Pool Pattern
-```cpp
-// Reusable worker threads
-// Task queue with synchronization
-threadPool.enqueue([]() { /* work */ });
-```
-
----
-
-## ⚡ Performance
-
-### Design Decisions for Speed
-
-1. **Non-Blocking Producers**: 
-   - `log()` uses `tryPush()` - returns immediately if buffer full
-   - No producer thread ever waits
-
-2. **Lock-Free Reading**:
-   - Ring buffer uses single mutex (minimal contention)
-   - Condition variables avoid busy-waiting
-
-3. **Parallel Sink Writing**:
-   - ThreadPool distributes writes across workers
-   - File/Socket I/O happens in parallel
-
-4. **Move Semantics**:
-   - `LogMessage` moved through buffer (no copies)
-   - RAII wrappers use move-only semantics
-
-### Benchmarking Ideas
-```cpp
-// Throughput test
-auto start = std::chrono::high_resolution_clock::now();
-for (int i = 0; i < 100000; ++i) {
-    logger.log(msg);
+```json
+{
+    "log_manager": {
+        "buffer_size": 100,
+        "thread_pool_size": 4
+    },
+    "sinks": {
+        "console": { "enabled": true },
+        "file":    { "enabled": true, "path": "output/app.log" },
+        "socket":  { "enabled": false, "path": "/tmp/log.sock" }
+    },
+    "sources": {
+        "cpu":       { "enabled": true,  "parse_rate_ms": 1000 },
+        "ram":       { "enabled": true,  "parse_rate_ms": 1000 },
+        "gpu_someip":{ "enabled": false, "parse_rate_ms": 2000 },
+        "socket":    { "enabled": false, "parse_rate_ms": 500  }
+    }
 }
-auto end = std::chrono::high_resolution_clock::now();
-// Measure messages/second
 ```
+
+**Live reload** — change any value in the dashboard UI and click **Apply & Reload**. The C++ app receives `SIGHUP`, tears down all sources and sinks, and rebuilds from the new JSON — zero downtime.
 
 ---
 
-## 📂 Project Structure
-```
-.
-├── app/
-│   └── main.cpp                    # Main application entry point
-├── include/
-│   ├── ConsoleSinkImpl.hpp         # Console output sink
-│   ├── FileSinkImpl.hpp            # File output sink
-│   ├── SocketSinkImpl.hpp          # Unix socket sink
-│   ├── ILogSink.hpp                # Sink interface
-│   ├── LogManager.hpp              # Core logging manager (Phase 4)
-│   ├── LogManagerBuilder.hpp       # Builder pattern
-│   ├── LogMessage.hpp              # Log message structure
-│   ├── LogSinkFactory.hpp          # Factory pattern
-│   ├── RingBuffer.hpp              # Thread-safe circular buffer (Phase 4)
-│   ├── ThreadPool.hpp              # Worker thread pool (Phase 4)
-│   ├── TelemetryReader.hpp         # Continuous reader (Phase 4)
-│   ├── ITelemetrySource.hpp        # Telemetry source interface
-│   ├── FileTelemetrySourceImpl.hpp # File-based source
-│   ├── SocketTelemetrySourceImpl.hpp # Socket-based source
-│   ├── SystemTelemetryWriter.hpp   # /proc reader
-│   ├── LogFormatter.hpp            # Policy-based formatter
-│   ├── CpuPolicy.hpp               # CPU thresholds & logic
-│   ├── RamPolicy.hpp               # RAM thresholds & logic
-│   ├── GpuPolicy.hpp               # GPU thresholds & logic
-│   ├── SafeFile.hpp                # RAII file wrapper
-│   └── SafeSocket.hpp              # RAII socket wrapper
-├── src/
-│   ├── ConsoleSinkImpl.cpp
-│   ├── FileSinkImpl.cpp
-│   ├── SocketSinkImpl.cpp
-│   ├── LogManager.cpp              # Multi-threaded implementation
-│   ├── LogManagerBuilder.cpp
-│   ├── LogMessage.cpp
-│   ├── LogSinkFactory.cpp
-│   ├── ThreadPool.cpp              # Thread pool implementation
-│   ├── FileTelemetrySourceImpl.cpp
-│   ├── SocketTelemetrySourceImpl.cpp
-│   ├── SystemTelemetryWriter.cpp
-│   ├── SafeFile.cpp
-│   └── SafeSocket.cpp
-├── CMakeLists.txt                  # Build configuration
-├── README.md                       # This file
-└── class_diagram.puml              # PlantUML architecture diagram
-```
+## 📊 Dashboard Features
+
+| Feature | Description |
+|---|---|
+| **Live Charts** | CPU, RAM, GPU/SomeIP, Socket — 60-point rolling window |
+| **Severity Alerts** | INFO / WARNING / CRITICAL with color coding and blinking on critical |
+| **Live Log Feed** | Real-time log stream via Server-Sent Events (SSE) |
+| **Source Toggles** | Enable/disable any source at runtime |
+| **Rate Control** | Adjust polling rate per source (ms) |
+| **Sink Status** | Shows active sinks with paths |
+| **App Status** | Online/Offline indicator with PID |
 
 ---
 
-## 🔧 Building
+## 🔬 Phase-by-Phase Development
 
-### CMake Build
-```bash
-# Debug build
-cmake -DCMAKE_BUILD_TYPE=Debug ..
-make -j$(nproc)
-
-# Release build (optimized)
-cmake -DCMAKE_BUILD_TYPE=Release ..
-make -j$(nproc)
-```
-
-### Manual Build (g++)
-```bash
-g++ -std=c++17 -pthread -o app \
-    app/main.cpp \
-    src/*.cpp \
-    -I./include
-```
-
-### Compiler Requirements
-- C++17 or later
-- GCC 7+ / Clang 5+ / MSVC 2017+
-- POSIX threads (`-pthread`)
+| Phase | What Was Built |
+|---|---|
+| **Phase 1** | `LogManager`, `LogMessage`, `ConsoleSink`, `FileSink` — basic logging pipeline |
+| **Phase 2** | `SafeFile`, `SafeSocket`, `FileTelemetrySource`, `SocketTelemetrySource` — data layer |
+| **Phase 3** | `LogManagerBuilder`, `LogSinkFactory`, `SocketSink` — Builder + Factory patterns |
+| **Phase 4** | `ThreadPool`, `RingBuffer`, `TelemetryReader<Policy>` — concurrent processing |
+| **Phase 5** | `SomeIPTelemetrySource`, CommonAPI integration, `GpuServiceImpl` on RPi3 |
+| **Phase 6** | `TelemetrySystem` Façade, `app_config.json`, `SystemTelemetryWriter`, live dashboard |
 
 ---
 
-## 🔮 Future Work
+## 🛠️ Technical Stack
 
-### Potential Enhancements
-
-1. **Network Sinks**
-   - TCP/UDP remote logging
-   - HTTP POST to logging services
-   - Kafka/RabbitMQ integration
-
-2. **Advanced Filtering**
-   - Severity-based filtering per sink
-   - Regex pattern matching
-   - Rate limiting
-
-3. **Performance Monitoring**
-   - Built-in metrics (messages/sec, buffer usage)
-   - Prometheus exporter
-   - Grafana dashboard
-
-4. **Configuration File**
-   - JSON/YAML configuration
-   - Runtime sink addition/removal
-   - Hot-reload without restart
-
-5. **Compression & Rotation**
-   - Log file rotation (by size/time)
-   - Gzip compression
-   - Retention policies
-
-6. **Testing**
-   - Unit tests with Google Test
-   - Integration tests
-   - Stress testing framework
+| Layer | Technology |
+|---|---|
+| **Language** | C++17 |
+| **Build System** | CMake 3.16+ |
+| **IPC Middleware** | SOME/IP via vsomeip3 + CommonAPI |
+| **Interface Definition** | FIDL/FDEPL (Franca IDL) |
+| **JSON Parsing** | nlohmann/json (single-header) |
+| **Cross-Compilation** | crosstool-NG — aarch64-rpi3-linux-gnu |
+| **Dashboard Backend** | Python 3 + Flask |
+| **Dashboard Frontend** | Vanilla JS + Chart.js + Server-Sent Events |
+| **Target Hardware** | Raspberry Pi 3 (ARM Cortex-A53, aarch64) |
 
 ---
 
-## 📚 Key Learnings
+## 📄 License
 
-### C++ Concepts Mastered
-- ✅ Multi-threading with `std::thread`
-- ✅ Synchronization primitives (`mutex`, `condition_variable`)
-- ✅ Lock-free programming with `std::atomic`
-- ✅ Template metaprogramming
-- ✅ Policy-based design
-- ✅ Move semantics and perfect forwarding
-- ✅ RAII and smart pointers
-- ✅ Design patterns (Factory, Builder, Producer-Consumer)
-
-### System Programming
-- ✅ Unix domain sockets
-- ✅ `/proc` filesystem parsing
-- ✅ File descriptors and system calls
-- ✅ Thread lifecycle management
-- ✅ Graceful shutdown strategies
-
----
-
-
-
-
-
-<div align="center">
-
-### ⭐ Star this repo if you found it helpful!
-
-**Built with ❤️ and lots of ☕**
-
-</div>
+This project was developed as a comprehensive C++ systems programming exercise demonstrating production-grade embedded software engineering practices.
