@@ -1,0 +1,5 @@
+[all]
+arm_64bit=1
+kernel=u-boot.bin
+enable_uart=1
+
